@@ -96,11 +96,14 @@ int main(void) {
       printf("Slave memory 0: %d, Slave memory 1: %d\n ", slave_memory[0], slave_memory[1]);
       delay__ms(2000);
     }
+
 */
   setup_volume_ctrl_sws();
   song_list__populate();
   delay__ms(10);
   SSD1306_Init();
+  print_lcd_screen(0);
+
   /* moved to print_lcd_screen(int i)
   SSD1306_Clear();
   SSD1306_InvertDisplay(true);
@@ -120,10 +123,11 @@ int main(void) {
     SSD1306_PrintString(song_name);
     i++;
   }
-*/
+
   // SSD1306_startscrollright(0x00, 0x01);
 
   // SSD1306_startscrollright(0x00, 0x00);
+*/
 
   Q_trackname = xQueueCreate(1, sizeof(trackname_t));
   Q_songdata = xQueueCreate(1, 512);
@@ -142,63 +146,77 @@ int main(void) {
   sj2_cli__init();
   xTaskCreate(mp3_reader_task, "reader", (4096 * 4) / sizeof(void *), NULL, PRIORITY_LOW, NULL);
   xTaskCreate(volumeup_task, "volumeup", (4096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(volumedwn_task, "volumedwn", (4096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(mp3_player_task, "player", (4096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(mp3_screen_control_task, "screen controls", (4096 * 4) / sizeof(void *), NULL, PRIORITY_LOW, NULL);
+  xTaskCreate(volumedwn_task, "volumedwn", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(mp3_player_task, "player", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(mp3_screen_control_task, "screen controls", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
 
   vTaskStartScheduler();
 
   /*
-      gpio__construct_with_function(GPIO__PORT_0, 10, GPIO__FUNCITON_0_IO_PIN);
-      gpio0__set_as_output(10);
-      gpio__construct_with_function(GPIO__PORT_0, 29, GPIO__FUNCITON_0_IO_PIN);
-      gpio0__set_as_input(29);
-      while (1) {
-        if (gpio0__get_level(29)) {
-          gpio0__set_high(10);
-          printf("Input is high \t");
-        } else {
-          gpio0__set_low(10);
-          printf("Input is low \t");
+          gpio__construct_with_function(GPIO__PORT_0, 10, GPIO__FUNCITON_0_IO_PIN);
+          gpio0__set_as_output(10);
+          gpio__construct_with_function(GPIO__PORT_0, 29, GPIO__FUNCITON_0_IO_PIN);
+          gpio0__set_as_input(29);
+          while (1) {
+            if (gpio0__get_level(29)) {
+              gpio0__set_high(10);
+              printf("Input is high \t");
+            } else {
+              gpio0__set_low(10);
+              printf("Input is low \t");
+            }
+          }
+
+
+        gpio__construct_with_function(GPIO__PORT_1, 4, GPIO__FUNCITON_0_IO_PIN);
+        gpio__lab__set_as_output(1, 4);
+        gpio__construct_with_function(GPIO__PORT_0, 29, GPIO__FUNCITON_0_IO_PIN);
+        gpio0__set_as_input(29);
+        while (1) {
+          if (gpio0__get_level(29)) {
+            gpio__lab_set_high(1, 4);
+            printf("Input is high \t");
+          } else {
+            gpio__lab_set_low(1, 4);
+            printf("Input is low \t");
+          }
         }
-      }
 
 
-    gpio__construct_with_function(GPIO__PORT_1, 4, GPIO__FUNCITON_0_IO_PIN);
-    gpio__lab__set_as_output(1, 4);
-    gpio__construct_with_function(GPIO__PORT_0, 29, GPIO__FUNCITON_0_IO_PIN);
-    gpio0__set_as_input(29);
+    lcd_menu_switch_init();
     while (1) {
-      if (gpio0__get_level(29)) {
-        gpio__lab_set_high(1, 4);
-        printf("Input is high \t");
-      } else {
-        gpio__lab_set_low(1, 4);
-        printf("Input is low \t");
+      if (!gpio__lab_get_level(1, 19)) {
+        printf("SW1 Input low \t");
+      } else if (gpio__lab_get_level(1, 19)) {
+        printf("SW1 Input high \t");
       }
     }
   */
-
   return 0;
 }
 
-void lcd_menu_switch_init(){
-  //p1.15 -> menu up
-  //p1.10 -> menu down
-    gpio__construct_with_function(GPIO__PORT_1,15,GPIO__FUNCITON_0_IO_PIN);
-    gpio__lab__set_as_input(1,15);
+void lcd_menu_switch_init() {
+  // p1.15 -> menu up
+  // p1.10 -> menu down
+  gpio__construct_with_function(GPIO__PORT_1, 15, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(1, 15);
+  LPC_IOCON->P1_15 &= ~(3 << 3);
+  LPC_IOCON->P1_15 |= (1 << 3);
 
-    gpio__construct_with_function(GPIO__PORT_1,10,GPIO__FUNCITON_0_IO_PIN);
-    gpio__lab__set_as_input(1,10);
+  gpio__construct_with_function(GPIO__PORT_1, 19, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(1, 19);
+  LPC_IOCON->P1_19 &= ~(3 << 3);
+  LPC_IOCON->P1_19 |= (1 << 3);
 }
 
-void print_lcd_screen(int song_index){
+void print_lcd_screen(int song_index) {
 
   SSD1306_Clear();
   SSD1306_InvertDisplay(true);
   int i = 0;
-  while (i < 8) {
+  while (i < 8 && song_index < (int)song_list__get_item_count) {
     if (i == 0) {
+      SSD1306_PrintString("->");
       SSD1306_SetPageStartAddr(i);
       SSD1306_SetColStartAddr(15);
     } else {
@@ -217,19 +235,17 @@ void print_lcd_screen(int song_index){
 
 void mp3_screen_control_task(void *p) {
   int song_index = 0;
-  while(1){
-    //up
-    if(gpio__lab_get_level(1,15))
-    {
-      if(song_index < MAX_SONGS){
+  while (1) {
+    // up
+    if (gpio__lab_get_level(1, 15)) {
+      if (song_index < (int)song_list__get_item_count) {
         song_index++;
         print_lcd_screen(song_index);
       }
     }
-    //down
-    else if(gpio__lab_get_level(1,10))
-    {
-      if(song_index > 0){
+    // down
+    else if (gpio__lab_get_level(1, 19)) {
+      if (song_index > 0) {
         song_index--;
         print_lcd_screen(song_index);
       }
