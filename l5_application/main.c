@@ -54,6 +54,10 @@ void mp3_player_task(void *p);
 void volumeup_task(void *p);
 void volumedwn_task(void *p);
 
+void mp3_screen_control_task(void *p);
+void lcd_menu_switch_init();
+void print_lcd_screen(int i);
+
 // isrs
 void volumedown_isr(void);
 void volumeup_isr(void);
@@ -97,6 +101,7 @@ int main(void) {
   song_list__populate();
   delay__ms(10);
   SSD1306_Init();
+  /* moved to print_lcd_screen(int i)
   SSD1306_Clear();
   SSD1306_InvertDisplay(true);
   int i = 0;
@@ -115,7 +120,7 @@ int main(void) {
     SSD1306_PrintString(song_name);
     i++;
   }
-
+*/
   // SSD1306_startscrollright(0x00, 0x01);
 
   // SSD1306_startscrollright(0x00, 0x00);
@@ -124,6 +129,7 @@ int main(void) {
   Q_songdata = xQueueCreate(1, 512);
   volumedwn_semaphore = xSemaphoreCreateBinary();
   volumeup_semaphore = xSemaphoreCreateBinary();
+
   lpc_peripheral__enable_interrupt(LPC_PERIPHERAL__GPIO, gpio0__interrupt_dispatcher);
   gpio0__attach_interrupt(29, GPIO_INTR__FALLING_EDGE, volumeup_isr);
   gpio0__attach_interrupt(30, GPIO_INTR__FALLING_EDGE, volumedown_isr);
@@ -132,11 +138,13 @@ int main(void) {
   NVIC_EnableIRQ(GPIO_IRQn);
   init_SPI();
   mp3_setup();
+  lcd_menu_switch_init();
   sj2_cli__init();
   xTaskCreate(mp3_reader_task, "reader", (4096 * 4) / sizeof(void *), NULL, PRIORITY_LOW, NULL);
   xTaskCreate(volumeup_task, "volumeup", (4096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(volumedwn_task, "volumedwn", (4096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(mp3_player_task, "player", (4096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(mp3_screen_control_task, "screen controls", (4096 * 4) / sizeof(void *), NULL, PRIORITY_LOW, NULL);
 
   vTaskStartScheduler();
 
@@ -173,6 +181,63 @@ int main(void) {
 
   return 0;
 }
+
+void lcd_menu_switch_init(){
+  //p1.15 -> menu up
+  //p1.10 -> menu down
+    gpio__construct_with_function(GPIO__PORT_1,15,GPIO__FUNCITON_0_IO_PIN);
+    gpio__lab__set_as_input(1,15);
+
+    gpio__construct_with_function(GPIO__PORT_1,10,GPIO__FUNCITON_0_IO_PIN);
+    gpio__lab__set_as_input(1,10);
+}
+
+void print_lcd_screen(int song_index){
+
+  SSD1306_Clear();
+  SSD1306_InvertDisplay(true);
+  int i = 0;
+  while (i < 8) {
+    if (i == 0) {
+      SSD1306_SetPageStartAddr(i);
+      SSD1306_SetColStartAddr(15);
+    } else {
+      SSD1306_SetPageStartAddr(i);
+      SSD1306_SetColStartAddr(0);
+    }
+    char song_name[24];
+    strncpy(song_name, song_list__get_name_for_item(song_index), 23);
+    printf("Song name for index %d = %s\n", song_index, song_list__get_name_for_item(song_index));
+    printf("Strncpy version = %s \n \n", song_name);
+    SSD1306_PrintString(song_name);
+    i++;
+    song_index++;
+  }
+}
+
+void mp3_screen_control_task(void *p) {
+  int song_index = 0;
+  while(1){
+    //up
+    if(gpio__lab_get_level(1,15))
+    {
+      if(song_index < MAX_SONGS){
+        song_index++;
+        print_lcd_screen(song_index);
+      }
+    }
+    //down
+    else if(gpio__lab_get_level(1,10))
+    {
+      if(song_index > 0){
+        song_index--;
+        print_lcd_screen(song_index);
+      }
+    }
+    vTaskDelay(1000);
+  }
+}
+
 void setup_volume_ctrl_sws() {
   // p0.29 (SW3) -> volume up
   gpio__construct_with_function(GPIO__PORT_0, 29, GPIO__FUNCITON_0_IO_PIN);
