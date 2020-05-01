@@ -80,7 +80,7 @@ int main(void) {
       delay__ms(2000);
     }
 */
-
+  setup_volume_ctrl_sws();
   song_list__populate();
   delay__ms(10);
   SSD1306_Init();
