@@ -8,6 +8,7 @@
 #include "event_groups.h"
 #include "ff.h"
 #include "gpio.h"
+#include "gpio_isr.h"
 #include "gpio_lab.h"
 #include "i2c2_slave_functions.h"
 #include "i2c_slave_init.h"
@@ -46,12 +47,24 @@ static EventGroupHandle_t event_group;
 #define BIT_0 (1 << 0)
 #define BIT_1 (1 << 1)
 */
+
+// tasks
 void mp3_reader_task(void *p);
 void mp3_player_task(void *p);
+void volumeup_task(void *p);
+void volumedwn_task(void *p);
+
+// isrs
+void volumedown_isr(void);
+void volumeup_isr(void);
+
 void setup_volume_ctrl_sws();
 
 QueueHandle_t Q_songdata;
 QueueHandle_t Q_trackname;
+SemaphoreHandle_t volumeup_semaphore;
+SemaphoreHandle_t volumedwn_semaphore;
+
 int main(void) {
   // if (acceleration__init) {
   // xTaskCreate(producer, "producer", (4096 * 4) / sizeof(void *), NULL, PRIORITY_LOW, NULL);
@@ -109,11 +122,20 @@ int main(void) {
 
   Q_trackname = xQueueCreate(1, sizeof(trackname_t));
   Q_songdata = xQueueCreate(1, 512);
+  volumedwn_semaphore = xSemaphoreCreateBinary();
+  volumeup_semaphore = xSemaphoreCreateBinary();
+  lpc_peripheral__enable_interrupt(LPC_PERIPHERAL__GPIO, gpio0__interrupt_dispatcher);
+  gpio0__attach_interrupt(29, GPIO_INTR__FALLING_EDGE, volumeup_isr);
+  gpio0__attach_interrupt(30, GPIO_INTR__FALLING_EDGE, volumedown_isr);
 
+  // enable GPIO interrupt
+  NVIC_EnableIRQ(GPIO_IRQn);
   init_SPI();
   mp3_setup();
   sj2_cli__init();
   xTaskCreate(mp3_reader_task, "reader", (4096 * 4) / sizeof(void *), NULL, PRIORITY_LOW, NULL);
+  xTaskCreate(volumeup_task, "volumeup", (4096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(volumedwn_task, "volumedwn", (4096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(mp3_player_task, "player", (4096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
 
   vTaskStartScheduler();
@@ -151,14 +173,14 @@ int main(void) {
 
   return 0;
 }
-void setup_volume_ctrl_sws(){
-    //p0.29 (SW3) -> volume up
-    gpio__construct_with_function(GPIO__PORT_0,29,GPIO__FUNCITON_0_IO_PIN);
-    gpio__lab__set_as_input(0,29);
+void setup_volume_ctrl_sws() {
+  // p0.29 (SW3) -> volume up
+  gpio__construct_with_function(GPIO__PORT_0, 29, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 29);
 
-    //p0.30 (SW2) -> volume down
-    gpio__construct_with_function(GPIO__PORT_0,30,GPIO__FUNCITON_0_IO_PIN);
-    gpio__lab__set_as_input(0,30);
+  // p0.30 (SW2) -> volume down
+  gpio__construct_with_function(GPIO__PORT_0, 30, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 30);
 }
 
 void mp3_reader_task(void *p) {
@@ -208,6 +230,37 @@ void mp3_player_task(void *p) {
     counter++;
   }
 }
+
+void volumeup_task(void *p) {
+  while (1) {
+    if (xSemaphoreTake(volumeup_semaphore, portMAX_DELAY)) {
+      // read current volume
+      uint16_t current_volume = Mp3ReadRegister(SCI_VOL);
+      uint8_t current_volume_highbyte = (current_volume >> 8) & 0xFF;
+      uint8_t current_volume_lowbyte = current_volume & 0xFF;
+      if (current_volume > MAX_VOLUME) {
+        Mp3WriteRegister(SCI_VOL, current_volume_highbyte - 25, current_volume_lowbyte - 25);
+      }
+    }
+  }
+}
+
+void volumedwn_task(void *p) {
+  while (1) {
+    if (xSemaphoreTake(volumedwn_semaphore, portMAX_DELAY)) {
+      // read current volume
+      uint16_t current_volume = Mp3ReadRegister(SCI_VOL);
+      uint8_t current_volume_highbyte = (current_volume >> 8) & 0xFF;
+      uint8_t current_volume_lowbyte = current_volume & 0xFF;
+      if (current_volume < MIN_VOLUME) {
+        Mp3WriteRegister(SCI_VOL, current_volume_highbyte + 25, current_volume_lowbyte + 25);
+      }
+    }
+  }
+}
+
+void volumeup_isr(void) { xSemaphoreGiveFromISR(volumeup_semaphore, NULL); }
+void volumedown_isr(void) { xSemaphoreGiveFromISR(volumedwn_semaphore, NULL); }
 
 /*
 void uart_read_task(void *p) {

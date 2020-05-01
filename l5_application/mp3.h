@@ -19,6 +19,8 @@
 #define SCI_AICTRL1 0x0D
 #define SCI_AICTRL2 0x0E
 #define SCI_AICTRL3 0x0F
+#define MAX_VOLUME 0x0000
+#define MIN_VOLUME 0xFAFA
 
 void init_GPIO();
 

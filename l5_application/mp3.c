@@ -55,7 +55,7 @@ void mp3_setup() {
   gpio__lab_set(2, 2, true);
 
   // set volume
-  Mp3WriteRegister(SCI_VOL, 20, 20);
+  Mp3WriteRegister(SCI_VOL, 25, 25);
 
   // Let's check the status of the VS1053
   int MP3Mode = Mp3ReadRegister(SCI_MODE);
