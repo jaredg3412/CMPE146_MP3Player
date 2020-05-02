@@ -53,16 +53,24 @@ void mp3_reader_task(void *p);
 void mp3_player_task(void *p);
 void volumeup_task(void *p);
 void volumedwn_task(void *p);
+void select_song_task(void *p);
+void pass_song_name_task(void *p);
 
 void mp3_screen_control_task(void *p);
 void lcd_menu_switch_init();
 void print_lcd_screen(int i);
+
+//trackname_t trackname;
+// xQueueSend(Q_trackname, trackname, portMAX_DELAY);
 
 // isrs
 void volumedown_isr(void);
 void volumeup_isr(void);
 
 void setup_volume_ctrl_sws();
+
+//global variable
+volatile int cursor = 0;//i changed the i from print_lcd_screen() to this
 
 QueueHandle_t Q_songdata;
 QueueHandle_t Q_trackname;
@@ -149,6 +157,8 @@ int main(void) {
   xTaskCreate(volumedwn_task, "volumedwn", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(mp3_player_task, "player", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(mp3_screen_control_task, "screen controls", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(select_song_task, "play_song", (3096 * 4) / sizeof(void *), NULL, PRIORITY_LOW, NULL);
+  xTaskCreate(pass_song_name_task, "pass", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
 
   vTaskStartScheduler();
 
@@ -213,14 +223,14 @@ void print_lcd_screen(int song_index) {
 
   SSD1306_Clear();
   SSD1306_InvertDisplay(true);
-  int i = 0;
-  while (i < 8 && song_index < (int)song_list__get_item_count) {
-    if (i == 0) {
+  //int i = 0;
+  while (cursor < 8 && song_index < (int)song_list__get_item_count) {//made a change here
+    if (cursor == 0) {//made a change here
       SSD1306_PrintString("->");
-      SSD1306_SetPageStartAddr(i);
+      SSD1306_SetPageStartAddr(cursor);//made a change here
       SSD1306_SetColStartAddr(15);
     } else {
-      SSD1306_SetPageStartAddr(i);
+      SSD1306_SetPageStartAddr(cursor);//made a change here
       SSD1306_SetColStartAddr(0);
     }
     char song_name[24];
@@ -228,7 +238,7 @@ void print_lcd_screen(int song_index) {
     printf("Song name for index %d = %s\n", song_index, song_list__get_name_for_item(song_index));
     printf("Strncpy version = %s \n \n", song_name);
     SSD1306_PrintString(song_name);
-    i++;
+    cursor++;//made a change here
     song_index++;
   }
 }
@@ -343,6 +353,22 @@ void volumedwn_task(void *p) {
 void volumeup_isr(void) { xSemaphoreGiveFromISR(volumeup_semaphore, NULL); }
 void volumedown_isr(void) { xSemaphoreGiveFromISR(volumedwn_semaphore, NULL); }
 
+void pass_song_name_task(void *p){//using pin 1_30 switch2(button) on the sjtwo board
+  gpio__construct_with_function(GPIO__PORT_0, 30, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 30);
+  LPC_IOCON->P0_30 |= (1 << 3);//enable pull down resistor
+  //trackname_t trackname;
+  //memset(trackname, 0, sizeof(trackname));
+  while (1) {
+    if (LPC_GPIO0->PIN & (1 << 30))//if button is pressed
+    {
+    //strncpy(trackname, song_list__get_name_for_item(cursor), 64);
+    //xQueueSend(Q_trackname, trackname, portMAX_DELAY);
+    xQueueSend(Q_trackname, song_list__get_name_for_item(cursor), portMAX_DELAY);
+    }
+    vTaskDelay(100);
+  }
+}
 /*
 void uart_read_task(void *p) {
   while (1) {
