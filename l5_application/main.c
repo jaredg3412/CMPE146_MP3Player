@@ -28,6 +28,7 @@ void volumeup_task(void *p);
 void volumedwn_task(void *p);
 void select_song_task(void *p);
 void pass_song_name_task(void *p);
+void accelerometer_bass_treble_control(void *p);
 
 void mp3_screen_control_task(void *p);
 void mp3_screen_control_task2(void *p);
@@ -83,6 +84,8 @@ int main(void) {
   init_SPI();
   mp3_setup();
   lcd_menu_switch_init();
+  acceleration__init();
+  
   xTaskCreate(mp3_reader_task, "reader", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(volumeup_task, "volumeup", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(volumedwn_task, "volumedwn", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
@@ -90,9 +93,73 @@ int main(void) {
   xTaskCreate(mp3_screen_control_task, "screen controls", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(mp3_screen_control_task2, "move arrow down", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(pass_song_name_task, "pass", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (1024 * 4) / sizeof(void *), NULL, PRIORITY_LOW, NULL);
 
   vTaskStartScheduler();
   return 0;
+}
+
+void accelerometer_bass_treble_control(void *p) {
+  while (1) {
+    acceleration__axis_data_s sensor_data;
+    float average_z = 0;
+    float average_x = 0;
+
+    while (xTaskGetTickCount() % 100 != 0) {
+      sensor_data = acceleration__get_data();
+      average_z += sensor_data.z;
+      average_x += sensor_data.x;
+    }
+    average_z = average_z / 100; /// 100;
+    average_x = average_x / 100;
+
+
+    if(average_z<100)
+    {
+      //bass setting 1
+    }
+    else if(average_z>100 && average_z <200)
+    {
+      //bass setting 2
+
+    }
+    else if(average_z>200 && average_z < 300)
+    {
+      //bass setting 3
+
+    }
+    else
+    {
+      //bass setting 4
+
+    }
+
+
+
+    if(average_x<100)
+    {
+      //treble setting 1
+
+    }
+    else if(average_x>100 && average_x <200)
+    {
+      //treble setting 2
+
+    }
+    else if(average_x>200 && average_x < 300)
+    {
+      //treble setting 3
+
+    }
+    else
+    {
+      //treble setting 4
+  
+    }
+
+
+    vTaskDelay(100);
+  }
 }
 
 void lcd_menu_switch_init() {
