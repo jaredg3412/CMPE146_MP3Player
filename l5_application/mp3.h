@@ -37,3 +37,7 @@ void SPI_send_mp3_data(char byte);
 void setBass(uint8_t amplitude, uint8_t frequency);
 
 void setBassLevel(uint8_t level);
+
+void setTreble(uint8_t amplitude, uint8_t frequency);
+
+void setTrebleLevel(uint8_t level);

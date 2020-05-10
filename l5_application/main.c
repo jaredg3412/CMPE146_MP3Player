@@ -33,6 +33,9 @@ void mp3_screen_control_task(void *p);
 void mp3_screen_control_task2(void *p);
 void bass_down_task(void *p);
 void bass_up_task(void *p);
+void test_task(void *p);
+void treble_up_task(void *p);
+void treble_down_task(void *p);
 
 void lcd_menu_switch_init();
 void print_lcd_screen(int i);
@@ -45,12 +48,17 @@ void move_up_isr(void);
 void move_down_isr(void); // in case we split in 2
 void bass_up_isr(void);
 void bass_down_isr(void);
+void treble_up_isr(void);
+void treble_down_isr(void);
 
 void setup_volume_ctrl_sws();
+void treble_bass_switch_init();
 
 // global variable
 volatile int cursor = 0;
 volatile uint8_t bass_level = 1;
+volatile uint8_t treble_level = 1;
+
 // volatile int song_index = 0; //in case we split the screen control function in 2
 
 QueueHandle_t Q_songdata;
@@ -62,10 +70,13 @@ SemaphoreHandle_t move_up_semaphore;
 SemaphoreHandle_t move_down_semaphore;
 SemaphoreHandle_t bass_up_semaphore;
 SemaphoreHandle_t bass_down_semaphore;
+SemaphoreHandle_t treble_up_semaphore;
+SemaphoreHandle_t treble_down_semaphore;
 
 int main(void) {
 
   setup_volume_ctrl_sws();
+  treble_bass_switch_init();
   song_list__populate();
   delay__ms(10);
   SSD1306_Init();
@@ -80,6 +91,8 @@ int main(void) {
   move_down_semaphore = xSemaphoreCreateBinary();
   bass_up_semaphore = xSemaphoreCreateBinary();
   bass_down_semaphore = xSemaphoreCreateBinary();
+  treble_down_semaphore = xSemaphoreCreateBinary();
+  treble_up_semaphore = xSemaphoreCreateBinary();
 
   lpc_peripheral__enable_interrupt(LPC_PERIPHERAL__GPIO, gpio0__interrupt_dispatcher);
   gpio0__attach_interrupt(29, GPIO_INTR__FALLING_EDGE, volumeup_isr);
@@ -89,7 +102,8 @@ int main(void) {
   gpio0__attach_interrupt(8, GPIO_INTR__FALLING_EDGE, move_down_isr);
   gpio0__attach_interrupt(25, GPIO_INTR__FALLING_EDGE, bass_down_isr);
   gpio0__attach_interrupt(26, GPIO_INTR__FALLING_EDGE, bass_up_isr);
-
+  gpio0__attach_interrupt(0, GPIO_INTR__FALLING_EDGE, treble_up_isr);
+  gpio0__attach_interrupt(1, GPIO_INTR__FALLING_EDGE, treble_down_isr);
 
   // enable GPIO interrupt
   NVIC_EnableIRQ(GPIO_IRQn);
@@ -97,17 +111,21 @@ int main(void) {
   mp3_setup();
   lcd_menu_switch_init();
   acceleration__init();
-  
-  xTaskCreate(mp3_reader_task, "reader", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(volumeup_task, "volumeup", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(volumedwn_task, "volumedwn", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(mp3_player_task, "player", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(mp3_screen_control_task, "screen controls", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(mp3_screen_control_task2, "move arrow down", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+
+  xTaskCreate(mp3_reader_task, "reader", (2024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(volumeup_task, "volumeup", (2024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(volumedwn_task, "volumedwn", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(mp3_player_task, "player", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(mp3_screen_control_task, "screen controls", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(mp3_screen_control_task2, "move arrow down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(pass_song_name_task, "pass", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  //xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (1024 * 4) / sizeof(void *), NULL, PRIORITY_LOW, NULL);
+  // xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (1024 * 4) / sizeof(void *), NULL,
+  // PRIORITY_LOW, NULL);
   xTaskCreate(bass_up_task, "bass up", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(bass_down_task, "bass down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  // xTaskCreate(test_task, "bass down", (2048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(treble_down_task, "treble down", (2048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(treble_up_task, "treble up", (2048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
 
   vTaskStartScheduler();
   return 0;
@@ -127,53 +145,47 @@ void accelerometer_bass_treble_control(void *p) {
     average_z = average_z / 100; /// 100;
     average_x = average_x / 100;
 
+    if (average_z < 100) {
+      // bass setting 1
+    } else if (average_z > 100 && average_z < 200) {
+      // bass setting 2
 
-    if(average_z<100)
-    {
-      //bass setting 1
-    }
-    else if(average_z>100 && average_z <200)
-    {
-      //bass setting 2
+    } else if (average_z > 200 && average_z < 300) {
+      // bass setting 3
 
-    }
-    else if(average_z>200 && average_z < 300)
-    {
-      //bass setting 3
-
-    }
-    else
-    {
-      //bass setting 4
-
+    } else {
+      // bass setting 4
     }
 
+    if (average_x < 100) {
+      // treble setting 1
 
+    } else if (average_x > 100 && average_x < 200) {
+      // treble setting 2
 
-    if(average_x<100)
-    {
-      //treble setting 1
+    } else if (average_x > 200 && average_x < 300) {
+      // treble setting 3
 
+    } else {
+      // treble setting 4
     }
-    else if(average_x>100 && average_x <200)
-    {
-      //treble setting 2
-
-    }
-    else if(average_x>200 && average_x < 300)
-    {
-      //treble setting 3
-
-    }
-    else
-    {
-      //treble setting 4
-  
-    }
-
 
     vTaskDelay(100);
   }
+}
+void treble_bass_switch_init() {
+  // bass down p0.25
+  // bass up p0.26
+  // treble up p0.
+  gpio__construct_with_function(GPIO__PORT_0, 25, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 25);
+  gpio__construct_with_function(GPIO__PORT_0, 26, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 26);
+
+  gpio__construct_with_function(GPIO__PORT_0, 0, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 0);
+  gpio__construct_with_function(GPIO__PORT_0, 1, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 1);
 }
 
 void lcd_menu_switch_init() {
@@ -231,7 +243,7 @@ void mp3_screen_control_task(void *p) {
 }
 
 // if  we end up having to split the screen control task in 2 this is the move down task void
-mp3_screen_control_task2(void *p) {
+void mp3_screen_control_task2(void *p) {
   while (1) {
     if (xSemaphoreTake(move_down_semaphore, portMAX_DELAY)) {
       // down
@@ -259,7 +271,7 @@ void mp3_reader_task(void *p) {
   UINT br;
   while (1) {
     xQueueReceive(Q_trackname, name, portMAX_DELAY);
-    printf("Received song to play: %s\n", name);
+    // printf("Received song to play: %s\n", name);
 
     // open file
     const char *filename = name; // check if accurate
@@ -272,14 +284,14 @@ void mp3_reader_task(void *p) {
         xQueueSend(Q_songdata, bytes_512, portMAX_DELAY);
 
         if (uxQueueMessagesWaiting(Q_trackname)) {
-          printf("New play song request\n");
+          // printf("New play song request\n");
           break;
         }
       }
       // close file
       f_close(&file);
     } else {
-      printf("Failed to open mp3 file \n");
+      // printf("Failed to open mp3 file \n");
     }
   }
 }
@@ -334,6 +346,10 @@ void volumedown_isr(void) { xSemaphoreGiveFromISR(volumedwn_semaphore, NULL); } 
 void pass_song_isr(void) { xSemaphoreGiveFromISR(pass_song_semaphore, NULL); }
 void move_up_isr(void) { xSemaphoreGiveFromISR(move_up_semaphore, NULL); }
 void move_down_isr(void) { xSemaphoreGiveFromISR(move_down_semaphore, NULL); }
+void bass_up_isr(void) { xSemaphoreGiveFromISR(bass_up_semaphore, NULL); }
+void bass_down_isr(void) { xSemaphoreGiveFromISR(bass_down_semaphore, NULL); }
+void treble_up_isr(void) { xSemaphoreGiveFromISR(treble_up_semaphore, NULL); }
+void treble_down_isr(void) { xSemaphoreGiveFromISR(treble_down_semaphore, NULL); }
 
 void pass_song_name_task(void *p) { // using pin 0_7
   while (1) {
@@ -343,11 +359,11 @@ void pass_song_name_task(void *p) { // using pin 0_7
   }
 }
 
-void bass_down_task(void *p){
-  while(1){
-    if(xSemaphoreTake(bass_down_semaphore, portMAX_DELAY)){
-      // check to make sure we dont try to set bass level to something less than 0
-      if(bass_level > 0){
+void bass_down_task(void *p) {
+  while (1) {
+    if (xSemaphoreTake(bass_down_semaphore, portMAX_DELAY)) {
+      // printf("in bass down task \n");
+      if (bass_level > 1) {
         bass_level--;
         setBassLevel(bass_level);
       }
@@ -355,14 +371,49 @@ void bass_down_task(void *p){
   }
 }
 
-void bass_up_task(void *p){
-  while(1){
-    if(xSemaphoreTake(bass_down_semaphore, portMAX_DELAY)){
+void bass_up_task(void *p) {
+  while (1) {
+    if (xSemaphoreTake(bass_up_semaphore, portMAX_DELAY)) {
       // check to make sure we dont try to set bass level to something more than 5
-      if(bass_level < 5){
+      // printf("in bass up task \n");
+      if (bass_level < 5) {
         bass_level++;
         setBassLevel(bass_level);
       }
+    }
+  }
+}
+
+void treble_up_task(void *p) {
+  while (1) {
+    if (xSemaphoreTake(treble_up_semaphore, portMAX_DELAY)) {
+      printf("in treble up task \n");
+      if (treble_level < 5) {
+        treble_level++;
+        setBassLevel(treble_level);
+      }
+    }
+  }
+}
+
+void treble_down_task(void *p) {
+  while (1) {
+    if (xSemaphoreTake(treble_down_semaphore, portMAX_DELAY)) {
+      printf("in treble down task \n");
+      if (treble_level > 1) {
+        treble_level--;
+        setBassLevel(treble_level);
+      }
+    }
+  }
+}
+
+void test_task(void *p) {
+  while (1) {
+    if (gpio__lab_get_level(0, 25)) {
+      printf("button is high \n");
+    } else if (gpio__lab_get_level(0, 26)) {
+      printf("button2 is high \n");
     }
   }
 }

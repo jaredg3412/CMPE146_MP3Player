@@ -60,6 +60,9 @@ void mp3_setup() {
   // set bass
   setBassLevel(1);
 
+  // set treble
+  setTrebleLevel(1);
+
   // Let's check the status of the VS1053
   int MP3Mode = Mp3ReadRegister(SCI_MODE);
   int MP3Status = Mp3ReadRegister(SCI_STATUS);
@@ -133,38 +136,74 @@ void SPI_send_mp3_data(char byte) {
   gpio__lab_set(2, 2, true);  // Deselect Data
 }
 
-void setBass(uint8_t amplitude, uint8_t frequency){
+void setBass(uint8_t amplitude, uint8_t frequency) {
   // need to check that paremeters are within bounds for acceptable range
-  if(((amplitude >= 0) && (amplitude <= 15)) && ((frequency >= 2) && (frequency <= 15))){
+  if (((amplitude >= 0) && (amplitude <= 15)) && ((frequency >= 2) && (frequency <= 15))) {
     // store frequency and amplitude in one var
-    uint16_t newBASS = ((amplitude << 4) & 0xF0) + (frequency & 0x0F);
+    uint16_t newBASS = ((amplitude << 4) & 0x00F0) + (frequency & 0x000F);
     // get old bass register value
     uint16_t oldBASS = Mp3ReadRegister(SCI_BASS);
-    // clear old bass value and set new value 
+
+    // clear old bass value and set new value
     newBASS = (oldBASS & 0xFF00) + newBASS;
-    //get low and high byte for write function
+    // get low and high byte for write function
     uint8_t high_byte = (newBASS >> 8) & 0xFF;
     uint8_t low_byte = newBASS & 0xFF;
     Mp3WriteRegister(SCI_BASS, high_byte, low_byte);
   }
 }
 
-void setBassLevel(uint8_t level){
-  switch (level)
-  {
+void setTreble(uint8_t amplitude, uint8_t frequency) {
+  // need to check that paremeters are within bounds for acceptable range
+  if (((amplitude >= -8) && (amplitude <= 7)) && ((frequency >= 0) && (frequency <= 15))) {
+    // store frequency and amplitude in one var
+    uint16_t newTREB = ((amplitude << 12) & 0xF000) + ((frequency << 8) & 0x0F00);
+    // get old bass register value
+    uint16_t oldTREB = Mp3ReadRegister(SCI_BASS);
+
+    // clear old bass value and set new value
+    newTREB = (oldTREB & 0x00FF) + newTREB;
+    // get low and high byte for write function
+    uint8_t high_byte = (newTREB >> 8) & 0xFF;
+    uint8_t low_byte = newTREB & 0xFF;
+    Mp3WriteRegister(SCI_BASS, high_byte, low_byte);
+  }
+}
+
+void setBassLevel(uint8_t level) {
+  switch (level) {
   case 1:
-    setBass(3,5);
+    setBass(3, 5);
     break;
-  case 2: 
-    setBass(6,5);
+  case 2:
+    setBass(6, 5);
   case 3:
-    setBass(9,5);
-  case 4: 
-    setBass(12,5);
+    setBass(9, 5);
+  case 4:
+    setBass(12, 5);
   case 5:
-    setBass(15,5);
+    setBass(15, 5);
   default:
-    setBass(3,5);
+    setBass(0, 5);
+    break;
+  }
+}
+
+void setTrebleLevel(uint8_t level) {
+  switch (level) {
+  case 1:
+    setTreble(-5, 5);
+    break;
+  case 2:
+    setBass(-2, 5);
+  case 3:
+    setBass(1, 5);
+  case 4:
+    setBass(4, 5);
+  case 5:
+    setBass(7, 5);
+  default:
+    setBass(-8, 5);
     break;
   }
 }
