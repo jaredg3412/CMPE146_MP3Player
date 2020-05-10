@@ -1,4 +1,3 @@
-
 #include "FreeRTOS.h"
 #include "SSD1306.h"
 #include "acceleration.h"
@@ -43,6 +42,7 @@ void move_up_isr(void);
 void pause_isr(void);
 
 void setup_volume_ctrl_sws();
+void treble_bass_switch_init();
 
 // global variable
 volatile int cursor = 0;
@@ -61,6 +61,7 @@ TaskHandle_t player_handle;
 int main(void) {
 
   setup_volume_ctrl_sws();
+  treble_bass_switch_init();
   song_list__populate();
   delay__ms(10);
   SSD1306_Init();
@@ -100,6 +101,63 @@ int main(void) {
   return 0;
 }
 
+void accelerometer_bass_treble_control(void *p) {
+  while (1) {
+    acceleration__axis_data_s sensor_data;
+    float average_z = 0;
+    float average_x = 0;
+
+    while (xTaskGetTickCount() % 100 != 0) {
+      sensor_data = acceleration__get_data();
+      average_z += sensor_data.z;
+      average_x += sensor_data.x;
+    }
+    average_z = average_z / 100; /// 100;
+    average_x = average_x / 100;
+
+    if (average_z < 100) {
+      // bass setting 1
+    } else if (average_z > 100 && average_z < 200) {
+      // bass setting 2
+
+    } else if (average_z > 200 && average_z < 300) {
+      // bass setting 3
+
+    } else {
+      // bass setting 4
+    }
+
+    if (average_x < 100) {
+      // treble setting 1
+
+    } else if (average_x > 100 && average_x < 200) {
+      // treble setting 2
+
+    } else if (average_x > 200 && average_x < 300) {
+      // treble setting 3
+
+    } else {
+      // treble setting 4
+    }
+
+    vTaskDelay(100);
+  }
+}
+void treble_bass_switch_init() {
+  // bass down p0.25
+  // bass up p0.26
+  // treble up p0.
+  gpio__construct_with_function(GPIO__PORT_0, 25, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 25);
+  gpio__construct_with_function(GPIO__PORT_0, 26, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 26);
+
+  gpio__construct_with_function(GPIO__PORT_0, 0, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 0);
+  gpio__construct_with_function(GPIO__PORT_0, 1, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 1);
+}
+
 void lcd_menu_switch_init() {
   // p0.6 -> menu up
   // p0.8 -> menu down
@@ -127,7 +185,7 @@ void print_lcd_screen(int song_index) {
   SSD1306_InvertDisplay(true);
   int i = 0;
   while (i < 8 && song_index < (int)song_list__get_item_count) {
-    if (i == 0) {                                                
+    if (i == 0) {
       SSD1306_PrintString("->");
       SSD1306_SetPageStartAddr(i);
       SSD1306_SetColStartAddr(15);
@@ -137,8 +195,8 @@ void print_lcd_screen(int song_index) {
     }
     char song_name[24];
     strncpy(song_name, song_list__get_name_for_item(song_index), 23);
-    printf("Song name for index %d = %s\n", song_index, song_list__get_name_for_item(song_index));
-    printf("Strncpy version = %s \n \n", song_name);
+    // printf("Song name for index %d = %s\n", song_index, song_list__get_name_for_item(song_index));
+    // printf("Strncpy version = %s \n \n", song_name);
     SSD1306_PrintString(song_name);
     i++;
     song_index++;
@@ -146,49 +204,29 @@ void print_lcd_screen(int song_index) {
 }
 
 void mp3_screen_control_task(void *p) {
-  int song_index = 0;
   while (1) {
-    if (xSemaphoreTake(move_up_semaphore, portMAX_DELAY))
-    {
-    // up
-      if (gpio__lab_get_level(0, 6)) {
-        if (song_index < (int)song_list__get_item_count) {
-          song_index++;
-          cursor = song_index;
-          print_lcd_screen(song_index);
-        }
-      }
-    // down
-      else if (gpio__lab_get_level(0, 8)) {
-        if (song_index > 0) {
-          song_index--;
-          cursor = song_index;
-          print_lcd_screen(song_index);
-        }
+    if (xSemaphoreTake(move_up_semaphore, portMAX_DELAY)) {
+      // up
+      if (cursor < (int)song_list__get_item_count) {
+        cursor++;
+        print_lcd_screen(cursor);
       }
     }
-    vTaskDelay(1000);
   }
 }
-/* if we end up having to split the screen control task in 2 this is the move down task
-void mp3_screen_control_task2(void *p)
-{
-while (1) {
-    if (xSemaphoreTake(move_down_semaphore, portMAX_DELAY))
-    {
-    // down
-      if (gpio__lab_get_level(0, 8)) {
-        if (song_index > 0) {
-          song_index--;
-          cursor = song_index;
-          print_lcd_screen(song_index);
-        }
+
+// if  we end up having to split the screen control task in 2 this is the move down task void
+void mp3_screen_control_task2(void *p) {
+  while (1) {
+    if (xSemaphoreTake(move_down_semaphore, portMAX_DELAY)) {
+      // down
+      if (cursor > 0) {
+        cursor--;
+        print_lcd_screen(cursor);
       }
     }
-    vTaskDelay(1000);
   }
-} 
-*/
+}
 
 void setup_volume_ctrl_sws() {
   // p0.29 (SW3) -> volume up
@@ -206,7 +244,7 @@ void mp3_reader_task(void *p) {
   UINT br;
   while (1) {
     xQueueReceive(Q_trackname, name, portMAX_DELAY);
-    printf("Received song to play: %s\n", name);
+    // printf("Received song to play: %s\n", name);
 
     // open file
     const char *filename = name; // check if accurate
@@ -219,14 +257,14 @@ void mp3_reader_task(void *p) {
         xQueueSend(Q_songdata, bytes_512, portMAX_DELAY);
 
         if (uxQueueMessagesWaiting(Q_trackname)) {
-          printf("New play song request\n");
+          // printf("New play song request\n");
           break;
         }
       }
       // close file
       f_close(&file);
     } else {
-      printf("Failed to open mp3 file \n");
+      // printf("Failed to open mp3 file \n");
     }
   }
 }
@@ -243,7 +281,7 @@ void mp3_player_task(void *p) {
       }
       SPI_send_mp3_data(bytes_512[i]);
     }
-    printf("Received 512 bytes : %d\n", counter);
+    // printf("Received 512 bytes : %d\n", counter);
     counter++;
   }
 }
@@ -288,7 +326,6 @@ void pass_song_name_task(void *p) { // using pin 0_7
     if (xSemaphoreTake(pass_song_semaphore, portMAX_DELAY)) {
       xQueueSend(Q_trackname, song_list__get_name_for_item(cursor), portMAX_DELAY);
     }
-    vTaskDelay(100);
   }
 }
 
