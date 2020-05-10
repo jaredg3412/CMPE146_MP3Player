@@ -18,6 +18,7 @@
 #include "sj2_cli.h"
 #include "song_list.h"
 #include "task.h"
+#include "uart_printf.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -51,6 +52,7 @@ void bass_up_isr(void);
 void bass_down_isr(void);
 void treble_up_isr(void);
 void treble_down_isr(void);
+void pause_isr(void);
 
 void setup_volume_ctrl_sws();
 void treble_bass_switch_init();
@@ -73,6 +75,7 @@ SemaphoreHandle_t bass_up_semaphore;
 SemaphoreHandle_t bass_down_semaphore;
 SemaphoreHandle_t treble_up_semaphore;
 SemaphoreHandle_t treble_down_semaphore;
+SemaphoreHandle_t pause_semaphore;
 TaskHandle_t player_handle;
 
 int main(void) {
@@ -95,6 +98,7 @@ int main(void) {
   bass_down_semaphore = xSemaphoreCreateBinary();
   treble_down_semaphore = xSemaphoreCreateBinary();
   treble_up_semaphore = xSemaphoreCreateBinary();
+  pause_semaphore = xSemaphoreCreateBinary();
 
   lpc_peripheral__enable_interrupt(LPC_PERIPHERAL__GPIO, gpio0__interrupt_dispatcher);
   gpio0__attach_interrupt(29, GPIO_INTR__FALLING_EDGE, volumeup_isr);
@@ -106,6 +110,7 @@ int main(void) {
   gpio0__attach_interrupt(26, GPIO_INTR__FALLING_EDGE, bass_up_isr);
   gpio0__attach_interrupt(0, GPIO_INTR__FALLING_EDGE, treble_up_isr);
   gpio0__attach_interrupt(1, GPIO_INTR__FALLING_EDGE, treble_down_isr);
+  gpio0__attach_interrupt(16, GPIO_INTR__FALLING_EDGE, pause_isr);
 
   // enable GPIO interrupt
   NVIC_EnableIRQ(GPIO_IRQn);
@@ -114,10 +119,13 @@ int main(void) {
   lcd_menu_switch_init();
   acceleration__init();
 
+  sj2_cli__init();
+
   xTaskCreate(mp3_reader_task, "reader", (2024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(volumeup_task, "volumeup", (2024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(volumedwn_task, "volumedwn", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(mp3_player_task, "player", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, &player_handle); //made a change here
+  xTaskCreate(mp3_player_task, "player", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM,
+              &player_handle); // made a change here
   xTaskCreate(mp3_screen_control_task, "screen controls", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(mp3_screen_control_task2, "move arrow down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(pass_song_name_task, "pass", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
@@ -125,10 +133,10 @@ int main(void) {
   // PRIORITY_LOW, NULL);
   xTaskCreate(bass_up_task, "bass up", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(bass_down_task, "bass down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(treble_down_task, "treble down", (2048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(treble_up_task, "treble up", (2048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(pause_task, "pause", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-
+  xTaskCreate(treble_down_task, "treble down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(treble_up_task, "treble up", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(pause_task, "pause", (3048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  // xTaskCreate(test_task, "pause", (3048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
 
   vTaskStartScheduler();
   return 0;
@@ -207,6 +215,11 @@ void lcd_menu_switch_init() {
 
   gpio__construct_with_function(GPIO__PORT_0, 7, GPIO__FUNCITON_0_IO_PIN);
   gpio__lab__set_as_input(0, 7);
+
+  gpio__construct_with_function(GPIO__PORT_0, 16, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 16);
+  LPC_IOCON->P0_16 &= ~(3 << 3);
+  LPC_IOCON->P0_16 |= (1 << 3);
 }
 
 void print_lcd_screen(int song_index) {
@@ -353,6 +366,10 @@ void bass_up_isr(void) { xSemaphoreGiveFromISR(bass_up_semaphore, NULL); }
 void bass_down_isr(void) { xSemaphoreGiveFromISR(bass_down_semaphore, NULL); }
 void treble_up_isr(void) { xSemaphoreGiveFromISR(treble_up_semaphore, NULL); }
 void treble_down_isr(void) { xSemaphoreGiveFromISR(treble_down_semaphore, NULL); }
+void pause_isr(void) {
+  // uart_printf__polled(UART__0, "pause task sending semaphore \n");
+  xSemaphoreGiveFromISR(pause_semaphore, NULL);
+}
 
 void pass_song_name_task(void *p) { // using pin 0_7
   while (1) {
@@ -390,7 +407,7 @@ void bass_up_task(void *p) {
 void treble_up_task(void *p) {
   while (1) {
     if (xSemaphoreTake(treble_up_semaphore, portMAX_DELAY)) {
-      printf("in treble up task \n");
+      // printf("in treble up task \n");
       if (treble_level < 5) {
         treble_level++;
         setBassLevel(treble_level);
@@ -402,7 +419,7 @@ void treble_up_task(void *p) {
 void treble_down_task(void *p) {
   while (1) {
     if (xSemaphoreTake(treble_down_semaphore, portMAX_DELAY)) {
-      printf("in treble down task \n");
+      // printf("in treble down task \n");
       if (treble_level > 1) {
         treble_level--;
         setBassLevel(treble_level);
@@ -413,7 +430,7 @@ void treble_down_task(void *p) {
 
 void test_task(void *p) {
   while (1) {
-    if (gpio__lab_get_level(0, 25)) {
+    if (gpio__lab_get_level(0, 16)) {
       printf("button is high \n");
     } else if (gpio__lab_get_level(0, 26)) {
       printf("button2 is high \n");
@@ -421,19 +438,18 @@ void test_task(void *p) {
   }
 }
 
-void pause_task(void *p) {//using button 0_16
+void pause_task(void *p) { // using button 0_16
   bool play = true;
   while (1) {
     if (xSemaphoreTake(pause_semaphore, portMAX_DELAY)) {
-      if(play){
+      // printf("in pause_task \n");
+      if (play) {
         vTaskSuspend(player_handle);
         play = false;
-      }
-      else{
+      } else {
         vTaskResume(player_handle);
         play = true;
       }
     }
-    vTaskDelay(100);
   }
 }
