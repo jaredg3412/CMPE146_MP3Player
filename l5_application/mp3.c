@@ -57,6 +57,9 @@ void mp3_setup() {
   // set volume
   Mp3WriteRegister(SCI_VOL, 25, 25);
 
+  // set bass
+  setBassLevel(1);
+
   // Let's check the status of the VS1053
   int MP3Mode = Mp3ReadRegister(SCI_MODE);
   int MP3Status = Mp3ReadRegister(SCI_STATUS);
@@ -128,4 +131,40 @@ void SPI_send_mp3_data(char byte) {
   gpio__lab_set(2, 2, false); // Select Data
   SSP0__exchange_byte(byte);  // Send SPI byte
   gpio__lab_set(2, 2, true);  // Deselect Data
+}
+
+void setBass(uint8_t amplitude, uint8_t frequency){
+  // need to check that paremeters are within bounds for acceptable range
+  if(((amplitude >= 0) && (amplitude <= 15)) && ((frequency >= 2) && (frequency <= 15))){
+    // store frequency and amplitude in one var
+    uint16_t newBASS = ((amplitude << 4) & 0xF0) + (frequency & 0x0F);
+    // get old bass register value
+    uint16_t oldBASS = Mp3ReadRegister(SCI_BASS);
+    // clear old bass value and set new value 
+    newBASS = (oldBASS & 0xFF00) + newBASS;
+    //get low and high byte for write function
+    uint8_t high_byte = (newBASS >> 8) & 0xFF;
+    uint8_t low_byte = newBASS & 0xFF;
+    Mp3WriteRegister(SCI_BASS, high_byte, low_byte);
+  }
+}
+
+void setBassLevel(uint8_t level){
+  switch (level)
+  {
+  case 1:
+    setBass(3,5);
+    break;
+  case 2: 
+    setBass(6,5);
+  case 3:
+    setBass(9,5);
+  case 4: 
+    setBass(12,5);
+  case 5:
+    setBass(15,5);
+  default:
+    setBass(3,5);
+    break;
+  }
 }

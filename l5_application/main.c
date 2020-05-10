@@ -29,9 +29,11 @@ void volumedwn_task(void *p);
 void select_song_task(void *p);
 void pass_song_name_task(void *p);
 void accelerometer_bass_treble_control(void *p);
-
 void mp3_screen_control_task(void *p);
 void mp3_screen_control_task2(void *p);
+void bass_down_task(void *p);
+void bass_up_task(void *p);
+
 void lcd_menu_switch_init();
 void print_lcd_screen(int i);
 
@@ -41,11 +43,14 @@ void volumeup_isr(void);
 void pass_song_isr(void); // step 1 declare isr
 void move_up_isr(void);
 void move_down_isr(void); // in case we split in 2
+void bass_up_isr(void);
+void bass_down_isr(void);
 
 void setup_volume_ctrl_sws();
 
 // global variable
 volatile int cursor = 0;
+volatile uint8_t bass_level = 1;
 // volatile int song_index = 0; //in case we split the screen control function in 2
 
 QueueHandle_t Q_songdata;
@@ -55,6 +60,8 @@ SemaphoreHandle_t volumedwn_semaphore;
 SemaphoreHandle_t pass_song_semaphore; // step 2 declare semaphore handle
 SemaphoreHandle_t move_up_semaphore;
 SemaphoreHandle_t move_down_semaphore;
+SemaphoreHandle_t bass_up_semaphore;
+SemaphoreHandle_t bass_down_semaphore;
 
 int main(void) {
 
@@ -71,6 +78,8 @@ int main(void) {
   pass_song_semaphore = xSemaphoreCreateBinary(); // step 3 create semaphore binary
   move_up_semaphore = xSemaphoreCreateBinary();
   move_down_semaphore = xSemaphoreCreateBinary();
+  bass_up_semaphore = xSemaphoreCreateBinary();
+  bass_down_semaphore = xSemaphoreCreateBinary();
 
   lpc_peripheral__enable_interrupt(LPC_PERIPHERAL__GPIO, gpio0__interrupt_dispatcher);
   gpio0__attach_interrupt(29, GPIO_INTR__FALLING_EDGE, volumeup_isr);
@@ -78,6 +87,9 @@ int main(void) {
   gpio0__attach_interrupt(7, GPIO_INTR__FALLING_EDGE, pass_song_isr);
   gpio0__attach_interrupt(6, GPIO_INTR__FALLING_EDGE, move_up_isr);
   gpio0__attach_interrupt(8, GPIO_INTR__FALLING_EDGE, move_down_isr);
+  gpio0__attach_interrupt(25, GPIO_INTR__FALLING_EDGE, bass_down_isr);
+  gpio0__attach_interrupt(26, GPIO_INTR__FALLING_EDGE, bass_up_isr);
+
 
   // enable GPIO interrupt
   NVIC_EnableIRQ(GPIO_IRQn);
@@ -93,7 +105,9 @@ int main(void) {
   xTaskCreate(mp3_screen_control_task, "screen controls", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(mp3_screen_control_task2, "move arrow down", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(pass_song_name_task, "pass", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (1024 * 4) / sizeof(void *), NULL, PRIORITY_LOW, NULL);
+  //xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (1024 * 4) / sizeof(void *), NULL, PRIORITY_LOW, NULL);
+  xTaskCreate(bass_up_task, "bass up", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(bass_down_task, "bass down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
 
   vTaskStartScheduler();
   return 0;
@@ -324,8 +338,31 @@ void move_down_isr(void) { xSemaphoreGiveFromISR(move_down_semaphore, NULL); }
 void pass_song_name_task(void *p) { // using pin 0_7
   while (1) {
     if (xSemaphoreTake(pass_song_semaphore, portMAX_DELAY)) { // step 5 receive semaphor clause
-      printf("Sending over song name to player task");
       xQueueSend(Q_trackname, song_list__get_name_for_item(cursor), portMAX_DELAY);
+    }
+  }
+}
+
+void bass_down_task(void *p){
+  while(1){
+    if(xSemaphoreTake(bass_down_semaphore, portMAX_DELAY)){
+      // check to make sure we dont try to set bass level to something less than 0
+      if(bass_level > 0){
+        bass_level--;
+        setBassLevel(bass_level);
+      }
+    }
+  }
+}
+
+void bass_up_task(void *p){
+  while(1){
+    if(xSemaphoreTake(bass_down_semaphore, portMAX_DELAY)){
+      // check to make sure we dont try to set bass level to something more than 5
+      if(bass_level < 5){
+        bass_level++;
+        setBassLevel(bass_level);
+      }
     }
   }
 }
