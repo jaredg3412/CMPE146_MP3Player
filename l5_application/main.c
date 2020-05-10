@@ -29,32 +29,33 @@ void volumeup_task(void *p);
 void volumedwn_task(void *p);
 void select_song_task(void *p);
 void pass_song_name_task(void *p);
+void pause_task(void *p);
 
 void mp3_screen_control_task(void *p);
-//void mp3_screen_control_task2(void *p);
 void lcd_menu_switch_init();
 void print_lcd_screen(int i);
 
 // isrs
 void volumedown_isr(void);
 void volumeup_isr(void);
-void pass_song_isr(void); //step 1 declare isr
+void pass_song_isr(void);
 void move_up_isr(void);
-//void move_down_isr(void); //in case we split in 2
+void pause_isr(void);
 
 void setup_volume_ctrl_sws();
 
 // global variable
 volatile int cursor = 0;
-//volatile int song_index = 0; //in case we split the screen control function in 2
 
 QueueHandle_t Q_songdata;
 QueueHandle_t Q_trackname;
 SemaphoreHandle_t volumeup_semaphore;
 SemaphoreHandle_t volumedwn_semaphore;
-SemaphoreHandle_t pass_song_semaphore; //step 2 declare semaphore handle
+SemaphoreHandle_t pass_song_semaphore;
 SemaphoreHandle_t move_up_semaphore;
+SemaphoreHandle_t pause_semaphore;
 //SemaphoreHandle_t move_down_semaphore;
+TaskHandle_t player_handle;
 
 
 int main(void) {
@@ -69,15 +70,17 @@ int main(void) {
   Q_songdata = xQueueCreate(1, 512);
   volumedwn_semaphore = xSemaphoreCreateBinary();
   volumeup_semaphore = xSemaphoreCreateBinary();
-  pass_song_semaphore = xSemaphoreCreateBinary();//step 3 create semaphore binary
+  pass_song_semaphore = xSemaphoreCreateBinary();
   move_up_semaphore = xSemaphoreCreateBinary();
+  pause_semaphore = xSemaphoreCreateBinary();
   //move_down_semaphore = xSemaphoreCreateBinary();
 
   lpc_peripheral__enable_interrupt(LPC_PERIPHERAL__GPIO, gpio0__interrupt_dispatcher);
   gpio0__attach_interrupt(29, GPIO_INTR__FALLING_EDGE, volumeup_isr);
-  gpio0__attach_interrupt(30, GPIO_INTR__FALLING_EDGE, volumedown_isr);//step 3.5 attach the interrupt
+  gpio0__attach_interrupt(30, GPIO_INTR__FALLING_EDGE, volumedown_isr);
   gpio0__attach_interrupt(7, GPIO_INTR__FALLING_EDGE, pass_song_isr);
   gpio0__attach_interrupt(6, GPIO_INTR__FALLING_EDGE, move_up_isr);
+  gpio0__attach_interrupt(16, GPIO_INTR__FALLING_EDGE, play_pause_isr);
   //gpio0__attach_interrupt(8, GPIO_INTR__FALLING_EDGE, move_down_isr);
 
   // enable GPIO interrupt
@@ -88,11 +91,11 @@ int main(void) {
   xTaskCreate(mp3_reader_task, "reader", (3096 * 4) / sizeof(void *), NULL, PRIORITY_LOW, NULL);
   xTaskCreate(volumeup_task, "volumeup", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(volumedwn_task, "volumedwn", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(mp3_player_task, "player", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(mp3_player_task, "player", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, &player_handle); //made a change here
   xTaskCreate(mp3_screen_control_task, "screen controls", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   //xTaskCreate(mp3_screen_control_task2, "move arrow down", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(pass_song_name_task, "pass", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-
+  xTaskCreate(pause_task, "pause", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   vTaskStartScheduler();
   return 0;
 }
@@ -113,6 +116,9 @@ void lcd_menu_switch_init() {
 
   gpio__construct_with_function(GPIO__PORT_0, 7, GPIO__FUNCITON_0_IO_PIN);
   gpio__lab__set_as_input(0, 7);
+
+  gpio__construct_with_function(GPIO__PORT_0, 16, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 16);
 }
 
 void print_lcd_screen(int song_index) {
@@ -134,7 +140,7 @@ void print_lcd_screen(int song_index) {
     printf("Song name for index %d = %s\n", song_index, song_list__get_name_for_item(song_index));
     printf("Strncpy version = %s \n \n", song_name);
     SSD1306_PrintString(song_name);
-    i++; // made a change here
+    i++;
     song_index++;
   }
 }
@@ -271,15 +277,33 @@ void volumedwn_task(void *p) {
 }
 
 void volumeup_isr(void) { xSemaphoreGiveFromISR(volumeup_semaphore, NULL); }
-void volumedown_isr(void) { xSemaphoreGiveFromISR(volumedwn_semaphore, NULL); }//step 4 isr to give semaphor
+void volumedown_isr(void) { xSemaphoreGiveFromISR(volumedwn_semaphore, NULL); }
 void pass_song_isr(void) { xSemaphoreGiveFromISR(pass_song_semaphore, NULL); }
 void move_up_isr(void) { xSemaphoreGiveFromISR(move_up_semaphore, NULL); }
+void pause_isr(void) {xSemaphoreGiveFromISR(play_pause_semaphore, NULL); }
 //void move_down_isr(void) { xSemaphoreGiveFromISR(move_down_semaphore, NULL); }
 
 void pass_song_name_task(void *p) { // using pin 0_7
   while (1) {
-    if (xSemaphoreTake(pass_song_semaphore, portMAX_DELAY)) {// step 5 receive semaphor clause
+    if (xSemaphoreTake(pass_song_semaphore, portMAX_DELAY)) {
       xQueueSend(Q_trackname, song_list__get_name_for_item(cursor), portMAX_DELAY);
+    }
+    vTaskDelay(100);
+  }
+}
+
+void play_pause_task(void *p) {//using button 0_16
+  bool play = true;
+  while (1) {
+    if (xSemaphoreTake(play_pause_semaphore, portMAX_DELAY)) {
+      if(play){
+        vTaskSuspend(player_handle);
+        play = false;
+      }
+      else{
+        vTaskResume(player_handle);
+        play = true;
+      }
     }
     vTaskDelay(100);
   }
