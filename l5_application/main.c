@@ -36,6 +36,7 @@ void bass_up_task(void *p);
 void test_task(void *p);
 void treble_up_task(void *p);
 void treble_down_task(void *p);
+void pause_task(void *p);
 
 void lcd_menu_switch_init();
 void print_lcd_screen(int i);
@@ -72,6 +73,7 @@ SemaphoreHandle_t bass_up_semaphore;
 SemaphoreHandle_t bass_down_semaphore;
 SemaphoreHandle_t treble_up_semaphore;
 SemaphoreHandle_t treble_down_semaphore;
+TaskHandle_t player_handle;
 
 int main(void) {
 
@@ -115,7 +117,7 @@ int main(void) {
   xTaskCreate(mp3_reader_task, "reader", (2024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(volumeup_task, "volumeup", (2024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(volumedwn_task, "volumedwn", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(mp3_player_task, "player", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(mp3_player_task, "player", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, &player_handle); //made a change here
   xTaskCreate(mp3_screen_control_task, "screen controls", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(mp3_screen_control_task2, "move arrow down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(pass_song_name_task, "pass", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
@@ -123,9 +125,10 @@ int main(void) {
   // PRIORITY_LOW, NULL);
   xTaskCreate(bass_up_task, "bass up", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(bass_down_task, "bass down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  // xTaskCreate(test_task, "bass down", (2048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(treble_down_task, "treble down", (2048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(treble_up_task, "treble up", (2048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(pause_task, "pause", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+
 
   vTaskStartScheduler();
   return 0;
@@ -415,5 +418,22 @@ void test_task(void *p) {
     } else if (gpio__lab_get_level(0, 26)) {
       printf("button2 is high \n");
     }
+  }
+}
+
+void pause_task(void *p) {//using button 0_16
+  bool play = true;
+  while (1) {
+    if (xSemaphoreTake(pause_semaphore, portMAX_DELAY)) {
+      if(play){
+        vTaskSuspend(player_handle);
+        play = false;
+      }
+      else{
+        vTaskResume(player_handle);
+        play = true;
+      }
+    }
+    vTaskDelay(100);
   }
 }
