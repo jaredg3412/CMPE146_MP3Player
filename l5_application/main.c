@@ -81,7 +81,7 @@ int main(void) {
   gpio0__attach_interrupt(30, GPIO_INTR__FALLING_EDGE, volumedown_isr);
   gpio0__attach_interrupt(7, GPIO_INTR__FALLING_EDGE, pass_song_isr);
   gpio0__attach_interrupt(6, GPIO_INTR__FALLING_EDGE, move_up_isr);
-  gpio0__attach_interrupt(16, GPIO_INTR__FALLING_EDGE, play_pause_isr);
+  gpio0__attach_interrupt(16, GPIO_INTR__FALLING_EDGE, pause_isr);
   //gpio0__attach_interrupt(8, GPIO_INTR__FALLING_EDGE, move_down_isr);
 
   // enable GPIO interrupt
@@ -329,10 +329,10 @@ void pass_song_name_task(void *p) { // using pin 0_7
   }
 }
 
-void play_pause_task(void *p) {//using button 0_16
+void pause_task(void *p) {//using button 0_16
   bool play = true;
   while (1) {
-    if (xSemaphoreTake(play_pause_semaphore, portMAX_DELAY)) {
+    if (xSemaphoreTake(pause_semaphore, portMAX_DELAY)) {
       if(play){
         vTaskSuspend(player_handle);
         play = false;
