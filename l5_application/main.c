@@ -132,15 +132,15 @@ int main(void) {
   sj2_cli__init();
 
   xTaskCreate(mp3_reader_task, "reader", (2024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(volumeup_task, "volumeup", (2024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(volumeup_task, "volumeup", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(volumedwn_task, "volumedwn", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(mp3_player_task, "player", (3096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM,
               &player_handle); // made a change here
   xTaskCreate(mp3_screen_control_task, "screen controls", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(mp3_screen_control_task2, "move arrow down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(pass_song_name_task, "pass", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (1024 * 4) / sizeof(void *), NULL,
-              PRIORITY_MEDIUM, NULL);
+  xTaskCreate(pass_song_name_task, "pass", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  // xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (1024 * 4) / sizeof(void *), NULL,
+  //            PRIORITY_MEDIUM, NULL);
   xTaskCreate(bass_up_task, "bass up", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(bass_down_task, "bass down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(treble_down_task, "treble down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
@@ -148,25 +148,30 @@ int main(void) {
   xTaskCreate(pause_task, "pause", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(menu_task, "menu", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   // xTaskCreate(test_task, "pause", (3048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-
+  // xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (4096 * 4) / sizeof(void *), NULL,
+  // 5,
+  //            NULL);
   vTaskStartScheduler();
   return 0;
 }
 
 void accelerometer_bass_treble_control(void *p) {
   while (1) {
+    // acceleration__init();
+    printf("in accelerometer task \n");
     acceleration__axis_data_s sensor_data;
     float average_z = 0;
     float average_x = 0;
 
-    while (xTaskGetTickCount() % 100 != 0) {
-      sensor_data = acceleration__get_data();
-      average_z += sensor_data.z;
-      average_x += sensor_data.x;
-    }
+    // while (xTaskGetTickCount() % 100 != 0) {
+    sensor_data = acceleration__get_data();
+    average_z += sensor_data.z;
+    average_x += sensor_data.x;
+    printf("accerleration data x= %d, z = %d \n", average_x, average_z);
+    //}
+    /*
     average_z = average_z / 100; /// 100;
     average_x = average_x / 100;
-    printf("Average x = %d z = %d", average_x, average_z);
     if (average_z < 100) {
       // bass setting 1
       bass_level = 1;
@@ -210,7 +215,8 @@ void accelerometer_bass_treble_control(void *p) {
       setTrebleLevel(treble_level);
     }
 
-    vTaskDelay(100);
+    // vTaskDelay(100);
+    */
   }
 }
 void treble_bass_switch_init() {
