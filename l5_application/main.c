@@ -57,6 +57,7 @@ void treble_up_isr(void);
 void treble_down_isr(void);
 void pause_isr(void);
 void menu_isr(void);
+void accelerometer_isr(void);
 
 void setup_volume_ctrl_sws();
 void treble_bass_switch_init();
@@ -82,6 +83,7 @@ SemaphoreHandle_t bass_down_semaphore;
 SemaphoreHandle_t treble_up_semaphore;
 SemaphoreHandle_t treble_down_semaphore;
 SemaphoreHandle_t pause_semaphore;
+SemaphoreHandle_t accelerometer_semaphore;
 SemaphoreHandle_t menu_semaphore;
 
 TaskHandle_t player_handle;
@@ -108,6 +110,7 @@ int main(void) {
   treble_up_semaphore = xSemaphoreCreateBinary();
   pause_semaphore = xSemaphoreCreateBinary();
   menu_semaphore = xSemaphoreCreateBinary();
+  accelerometer_semaphore = xSemaphoreCreateBinary();
 
   lpc_peripheral__enable_interrupt(LPC_PERIPHERAL__GPIO, gpio0__interrupt_dispatcher);
   gpio0__attach_interrupt(29, GPIO_INTR__FALLING_EDGE, volumeup_isr);
@@ -121,6 +124,7 @@ int main(void) {
   gpio0__attach_interrupt(1, GPIO_INTR__FALLING_EDGE, treble_down_isr);
   gpio0__attach_interrupt(16, GPIO_INTR__FALLING_EDGE, pause_isr);
   gpio0__attach_interrupt(22, GPIO_INTR__FALLING_EDGE, menu_isr);
+  gpio0__attach_interrupt(9, GPIO_INTR__FALLING_EDGE, accelerometer_isr);
 
   // enable GPIO interrupt
   NVIC_EnableIRQ(GPIO_IRQn);
@@ -139,8 +143,6 @@ int main(void) {
   xTaskCreate(mp3_screen_control_task, "screen controls", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(mp3_screen_control_task2, "move arrow down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(pass_song_name_task, "pass", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  // xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (1024 * 4) / sizeof(void *), NULL,
-  //            PRIORITY_MEDIUM, NULL);
   xTaskCreate(bass_up_task, "bass up", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(bass_down_task, "bass down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(treble_down_task, "treble down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
@@ -148,81 +150,84 @@ int main(void) {
   xTaskCreate(pause_task, "pause", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(menu_task, "menu", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   // xTaskCreate(test_task, "pause", (3048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  // xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (4096 * 4) / sizeof(void *), NULL,
-  // 5,
-  //            NULL);
+  xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (1024 * 4) / sizeof(void *), NULL,
+              PRIORITY_MEDIUM, NULL);
+
   vTaskStartScheduler();
   return 0;
 }
 
 void accelerometer_bass_treble_control(void *p) {
   while (1) {
-    // acceleration__init();
-    printf("in accelerometer task \n");
-    acceleration__axis_data_s sensor_data;
-    float average_z = 0;
-    float average_x = 0;
+    if (xSemaphoreTake(accelerometer_semaphore, portMAX_DELAY)) {
+      // acceleration__init();
+      // printf("in accelerometer task \n");
+      acceleration__axis_data_s sensor_data;
+      float average_z = 0;
+      float average_x = 0;
 
-    // while (xTaskGetTickCount() % 100 != 0) {
-    sensor_data = acceleration__get_data();
-    average_z += sensor_data.z;
-    average_x += sensor_data.x;
-    printf("accerleration data x= %d, z = %d \n", average_x, average_z);
-    //}
-    /*
-    average_z = average_z / 100; /// 100;
-    average_x = average_x / 100;
-    if (average_z < 100) {
-      // bass setting 1
-      bass_level = 1;
-      setBassLevel(bass_level);
-    } else if (average_z > 100 && average_z < 200) {
-      // bass setting 2
-      bass_level = 2;
-      setBassLevel(bass_level);
-    } else if (average_z > 200 && average_z < 300) {
-      // bass setting 3
-      bass_level = 3;
-      setBassLevel(bass_level);
-    } else if (average_z > 300 && average_z < 400) {
-      // bass setting 4
-      bass_level = 4;
-      setBassLevel(bass_level);
-    } else {
-      bass_level = 5;
-      setBassLevel(bass_level);
+      for (int i = 0; i < 10; i++) {
+        sensor_data = acceleration__get_data();
+        average_z += sensor_data.z;
+        average_x += sensor_data.x;
+        // printf("accerleration data x= %f, z = %f \n", average_x, average_z);
+      }
+      average_z = average_z / 10; /// 10;
+      average_x = average_x / 10;
+
+      // set bass level
+      if (average_z < 1000) {
+        // bass setting 1
+        bass_level = 1;
+        setBassLevel(bass_level);
+      } else if (average_z > 1000 && average_z < 2000) {
+        // bass setting 2
+        bass_level = 2;
+        setBassLevel(bass_level);
+      } else if (average_z > 2000 && average_z < 3000) {
+        // bass setting 3
+        bass_level = 3;
+        setBassLevel(bass_level);
+      } else if (average_z > 3000 && average_z < 4000) {
+        // bass setting 4
+        bass_level = 4;
+        setBassLevel(bass_level);
+      } else {
+        bass_level = 5;
+        setBassLevel(bass_level);
+      }
+
+      // set treble level
+      if (average_x < 1000) {
+        // treble setting 1
+        treble_level = 1;
+        setTrebleLevel(treble_level);
+      } else if (average_x > 1000 && average_x < 2000) {
+        // treble setting 2
+        treble_level = 2;
+        setTrebleLevel(treble_level);
+      } else if (average_x > 2000 && average_x < 3000) {
+        // treble setting 3
+        treble_level = 3;
+        setTrebleLevel(treble_level);
+      } else if (average_x > 3000 && average_x < 4000) {
+        // treble setting 4
+        treble_level = 4;
+        setTrebleLevel(treble_level);
+      } else {
+        // treble setting 5
+        treble_level = 5;
+        setTrebleLevel(treble_level);
+      }
     }
-
-    if (average_x < 100) {
-      // treble setting 1
-      treble_level = 1;
-      setTrebleLevel(treble_level);
-    } else if (average_x > 100 && average_x < 200) {
-      // treble setting 2
-      treble_level = 2;
-      setTrebleLevel(treble_level);
-    } else if (average_x > 200 && average_x < 300) {
-      // treble setting 3
-      treble_level = 3;
-      setTrebleLevel(treble_level);
-    } else if (average_x > 300 && average_x < 400) {
-      // treble setting 4
-      treble_level = 4;
-      setTrebleLevel(treble_level);
-    } else {
-      // treble setting 5
-      treble_level = 5;
-      setTrebleLevel(treble_level);
-    }
-
-    // vTaskDelay(100);
-    */
   }
 }
 void treble_bass_switch_init() {
   // bass down p0.25
   // bass up p0.26
-  // treble up p0.
+  // treble up p0.0
+  // treble down p0.1
+  // treble control via accelerometer p0.9
   gpio__construct_with_function(GPIO__PORT_0, 25, GPIO__FUNCITON_0_IO_PIN);
   gpio__lab__set_as_input(0, 25);
   gpio__construct_with_function(GPIO__PORT_0, 26, GPIO__FUNCITON_0_IO_PIN);
@@ -232,6 +237,9 @@ void treble_bass_switch_init() {
   gpio__lab__set_as_input(0, 0);
   gpio__construct_with_function(GPIO__PORT_0, 1, GPIO__FUNCITON_0_IO_PIN);
   gpio__lab__set_as_input(0, 1);
+
+  gpio__construct_with_function(GPIO__PORT_0, 9, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 9);
 }
 
 void lcd_menu_switch_init() {
@@ -407,6 +415,7 @@ void bass_down_isr(void) { xSemaphoreGiveFromISR(bass_down_semaphore, NULL); }
 void treble_up_isr(void) { xSemaphoreGiveFromISR(treble_up_semaphore, NULL); }
 void treble_down_isr(void) { xSemaphoreGiveFromISR(treble_down_semaphore, NULL); }
 void menu_isr(void) { xSemaphoreGiveFromISR(menu_semaphore, NULL); }
+void accelerometer_isr(void) { xSemaphoreGiveFromISR(accelerometer_semaphore, NULL); }
 
 void pause_isr(void) {
   // uart_printf__polled(UART__0, "pause task sending semaphore \n");
