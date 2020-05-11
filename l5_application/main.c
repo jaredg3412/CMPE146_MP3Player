@@ -20,6 +20,7 @@
 #include "task.h"
 #include "uart_printf.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // tasks
@@ -38,9 +39,11 @@ void test_task(void *p);
 void treble_up_task(void *p);
 void treble_down_task(void *p);
 void pause_task(void *p);
+void menu_task(void *p);
 
 void lcd_menu_switch_init();
 void print_lcd_screen(int i);
+void print_menu_screen();
 
 // isrs
 void volumedown_isr(void);
@@ -53,6 +56,7 @@ void bass_down_isr(void);
 void treble_up_isr(void);
 void treble_down_isr(void);
 void pause_isr(void);
+void menu_isr(void);
 
 void setup_volume_ctrl_sws();
 void treble_bass_switch_init();
@@ -61,7 +65,9 @@ void treble_bass_switch_init();
 volatile int cursor = 0;
 volatile uint8_t bass_level = 1;
 volatile uint8_t treble_level = 1;
-
+volatile uint8_t current_track_number = 0;
+volatile bool play = true;
+// volatile bool play =
 // volatile int song_index = 0; //in case we split the screen control function in 2
 
 QueueHandle_t Q_songdata;
@@ -76,6 +82,8 @@ SemaphoreHandle_t bass_down_semaphore;
 SemaphoreHandle_t treble_up_semaphore;
 SemaphoreHandle_t treble_down_semaphore;
 SemaphoreHandle_t pause_semaphore;
+SemaphoreHandle_t menu_semaphore;
+
 TaskHandle_t player_handle;
 
 int main(void) {
@@ -99,6 +107,7 @@ int main(void) {
   treble_down_semaphore = xSemaphoreCreateBinary();
   treble_up_semaphore = xSemaphoreCreateBinary();
   pause_semaphore = xSemaphoreCreateBinary();
+  menu_semaphore = xSemaphoreCreateBinary();
 
   lpc_peripheral__enable_interrupt(LPC_PERIPHERAL__GPIO, gpio0__interrupt_dispatcher);
   gpio0__attach_interrupt(29, GPIO_INTR__FALLING_EDGE, volumeup_isr);
@@ -111,6 +120,7 @@ int main(void) {
   gpio0__attach_interrupt(0, GPIO_INTR__FALLING_EDGE, treble_up_isr);
   gpio0__attach_interrupt(1, GPIO_INTR__FALLING_EDGE, treble_down_isr);
   gpio0__attach_interrupt(16, GPIO_INTR__FALLING_EDGE, pause_isr);
+  gpio0__attach_interrupt(22, GPIO_INTR__FALLING_EDGE, menu_isr);
 
   // enable GPIO interrupt
   NVIC_EnableIRQ(GPIO_IRQn);
@@ -129,13 +139,14 @@ int main(void) {
   xTaskCreate(mp3_screen_control_task, "screen controls", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(mp3_screen_control_task2, "move arrow down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(pass_song_name_task, "pass", (2096 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  // xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (1024 * 4) / sizeof(void *), NULL,
-  // PRIORITY_LOW, NULL);
+  xTaskCreate(accelerometer_bass_treble_control, "accelerometer bass and treble", (1024 * 4) / sizeof(void *), NULL,
+              PRIORITY_MEDIUM, NULL);
   xTaskCreate(bass_up_task, "bass up", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(bass_down_task, "bass down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(treble_down_task, "treble down", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   xTaskCreate(treble_up_task, "treble up", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
-  xTaskCreate(pause_task, "pause", (3048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(pause_task, "pause", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
+  xTaskCreate(menu_task, "menu", (1024 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
   // xTaskCreate(test_task, "pause", (3048 * 4) / sizeof(void *), NULL, PRIORITY_MEDIUM, NULL);
 
   vTaskStartScheduler();
@@ -155,30 +166,48 @@ void accelerometer_bass_treble_control(void *p) {
     }
     average_z = average_z / 100; /// 100;
     average_x = average_x / 100;
-
+    printf("Average x = %d z = %d", average_x, average_z);
     if (average_z < 100) {
       // bass setting 1
+      bass_level = 1;
+      setBassLevel(bass_level);
     } else if (average_z > 100 && average_z < 200) {
       // bass setting 2
-
+      bass_level = 2;
+      setBassLevel(bass_level);
     } else if (average_z > 200 && average_z < 300) {
       // bass setting 3
-
-    } else {
+      bass_level = 3;
+      setBassLevel(bass_level);
+    } else if (average_z > 300 && average_z < 400) {
       // bass setting 4
+      bass_level = 4;
+      setBassLevel(bass_level);
+    } else {
+      bass_level = 5;
+      setBassLevel(bass_level);
     }
 
     if (average_x < 100) {
       // treble setting 1
-
+      treble_level = 1;
+      setTrebleLevel(treble_level);
     } else if (average_x > 100 && average_x < 200) {
       // treble setting 2
-
+      treble_level = 2;
+      setTrebleLevel(treble_level);
     } else if (average_x > 200 && average_x < 300) {
       // treble setting 3
-
-    } else {
+      treble_level = 3;
+      setTrebleLevel(treble_level);
+    } else if (average_x > 300 && average_x < 400) {
       // treble setting 4
+      treble_level = 4;
+      setTrebleLevel(treble_level);
+    } else {
+      // treble setting 5
+      treble_level = 5;
+      setTrebleLevel(treble_level);
     }
 
     vTaskDelay(100);
@@ -203,6 +232,8 @@ void lcd_menu_switch_init() {
   // p0.6 -> menu up
   // p0.8 -> menu down
   // p0.7 -> select song
+  // p0.16 -> pause/play
+  // p0.22 -> show menu
   gpio__construct_with_function(GPIO__PORT_0, 6, GPIO__FUNCITON_0_IO_PIN);
   gpio__lab__set_as_input(0, 6);
   // LPC_IOCON->P1_16 &= ~(3 << 3);
@@ -220,6 +251,9 @@ void lcd_menu_switch_init() {
   gpio__lab__set_as_input(0, 16);
   LPC_IOCON->P0_16 &= ~(3 << 3);
   LPC_IOCON->P0_16 |= (1 << 3);
+
+  gpio__construct_with_function(GPIO__PORT_0, 22, GPIO__FUNCITON_0_IO_PIN);
+  gpio__lab__set_as_input(0, 22);
 }
 
 void print_lcd_screen(int song_index) {
@@ -366,6 +400,8 @@ void bass_up_isr(void) { xSemaphoreGiveFromISR(bass_up_semaphore, NULL); }
 void bass_down_isr(void) { xSemaphoreGiveFromISR(bass_down_semaphore, NULL); }
 void treble_up_isr(void) { xSemaphoreGiveFromISR(treble_up_semaphore, NULL); }
 void treble_down_isr(void) { xSemaphoreGiveFromISR(treble_down_semaphore, NULL); }
+void menu_isr(void) { xSemaphoreGiveFromISR(menu_semaphore, NULL); }
+
 void pause_isr(void) {
   // uart_printf__polled(UART__0, "pause task sending semaphore \n");
   xSemaphoreGiveFromISR(pause_semaphore, NULL);
@@ -374,6 +410,7 @@ void pause_isr(void) {
 void pass_song_name_task(void *p) { // using pin 0_7
   while (1) {
     if (xSemaphoreTake(pass_song_semaphore, portMAX_DELAY)) { // step 5 receive semaphor clause
+      current_track_number = cursor;
       xQueueSend(Q_trackname, song_list__get_name_for_item(cursor), portMAX_DELAY);
     }
   }
@@ -410,7 +447,7 @@ void treble_up_task(void *p) {
       // printf("in treble up task \n");
       if (treble_level < 5) {
         treble_level++;
-        setBassLevel(treble_level);
+        setTrebleLevel(treble_level);
       }
     }
   }
@@ -422,7 +459,7 @@ void treble_down_task(void *p) {
       // printf("in treble down task \n");
       if (treble_level > 1) {
         treble_level--;
-        setBassLevel(treble_level);
+        setTrebleLevel(treble_level);
       }
     }
   }
@@ -439,7 +476,6 @@ void test_task(void *p) {
 }
 
 void pause_task(void *p) { // using button 0_16
-  bool play = true;
   while (1) {
     if (xSemaphoreTake(pause_semaphore, portMAX_DELAY)) {
       // printf("in pause_task \n");
@@ -452,4 +488,33 @@ void pause_task(void *p) { // using button 0_16
       }
     }
   }
+}
+void menu_task(void *p) {
+  while (1) {
+    if (xSemaphoreTake(menu_semaphore, portMAX_DELAY)) {
+      print_menu_screen();
+    }
+  }
+}
+void print_menu_screen() {
+  SSD1306_Clear();
+  SSD1306_InvertDisplay(true);
+  // printf("in pause_task \n");
+  SSD1306_PrintString("Current song playing: \n");
+  // get current song
+  char current_song[24];
+  strncpy(current_song, song_list__get_name_for_item(current_track_number), 23);
+  SSD1306_PrintString(current_song);
+  SSD1306_PrintString("\n");
+  SSD1306_PrintString("\n");
+  SSD1306_PrintString("Bass Level: \n");
+  // convert bass level int
+  char str[1];
+  itoa(bass_level, str, 10);
+  SSD1306_PrintString(str);
+  SSD1306_PrintString("\n");
+  SSD1306_PrintString("\n");
+  SSD1306_PrintString("Treble Level: \n");
+  itoa(treble_level, str, 10);
+  SSD1306_PrintString(str);
 }
